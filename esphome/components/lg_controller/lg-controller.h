@@ -869,6 +869,11 @@ private:
                 publish_state();
             }
         }
+        uint8_t buf[MsgLen] = {}; // All zeroes.
+        buf[0] = 0xAC;
+        buf[12] = calc_checksum(buf);
+        ESP_LOGD(TAG, "sending %s", format_hex_pretty(buf, MsgLen).c_str());
+        UARTDevice::write_array(buf, MsgLen);
     }
 
     void send_type_a_settings_message() {
