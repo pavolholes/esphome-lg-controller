@@ -871,6 +871,10 @@ private:
         }
         uint8_t buf[MsgLen] = {}; // All zeroes.
         buf[0] = 0xAC;
+        buf[5] = 0x01;
+        buf[7] = 0x08;
+        buf[9] = uint8_t(temp * 2);
+        buf[11] = 0x08;
         buf[12] = calc_checksum(buf);
         ESP_LOGD(TAG, "sending %s", format_hex_pretty(buf, MsgLen).c_str());
         UARTDevice::write_array(buf, MsgLen);
