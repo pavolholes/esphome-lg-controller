@@ -193,6 +193,7 @@ class LgController final : public climate::Climate, public uart::UARTDevice, pub
     uint32_t last_sent_recv_type_b_millis_ = 0;
     uint32_t last_write_millis_ = 0;
     uint32_t last_line_busy_millis_ = 0;
+    uint32_t last_tx_wait_log_millis_ = 0;
 
     enum class PendingSendKind : uint8_t { None, Status, TypeA, TypeB };
     PendingSendKind pending_send_ = PendingSendKind::None;
@@ -595,6 +596,22 @@ public:
         }
 
         // Send if there's a pending message.
+        const bool tx_pending = pending_type_a_settings_change_ ||
+            pending_type_b_settings_change_ || pending_type_b_timed_message_ ||
+            pending_status_change_;
+        if (pending_send_ == PendingSendKind::None && tx_pending &&
+            millis_now - last_line_busy_millis_ <= 500 &&
+            millis_now - last_tx_wait_log_millis_ >= 5000) {
+            ESP_LOGD(TAG, "TX waiting for idle: status=%d typeA=%d typeB=%d timed=%d; "
+                     "last bus activity %u ms ago; RX=%d; UART available=%u",
+                     pending_status_change_, pending_type_a_settings_change_,
+                     pending_type_b_settings_change_, pending_type_b_timed_message_,
+                     static_cast<unsigned>(millis_now - last_line_busy_millis_),
+                     rx_pin_.digital_read(),
+                     static_cast<unsigned>(UARTDevice::available()));
+            last_tx_wait_log_millis_ = millis_now;
+        }
+
         if (pending_send_ == PendingSendKind::None &&
             (millis_now - last_line_busy_millis_ > 500) &&
             !(slave_ && is_initializing_)) {
@@ -919,7 +936,8 @@ private:
         // Byte 12.
         send_buf_[12] = calc_checksum(send_buf_);
 
-        ESP_LOGD(TAG, "sending %s", format_hex_pretty(send_buf_, MsgLen).c_str());
+        ESP_LOGD(TAG, "sending at %u ms: %s", static_cast<unsigned>(millis()),
+                 format_hex_pretty(send_buf_, MsgLen).c_str());
         UARTDevice::write_array(send_buf_, MsgLen);
         last_write_millis_ = millis();
 
@@ -973,7 +991,8 @@ private:
 
         send_buf_[12] = calc_checksum(send_buf_);
 
-        ESP_LOGD(TAG, "sending %s", format_hex_pretty(send_buf_, MsgLen).c_str());
+        ESP_LOGD(TAG, "sending at %u ms: %s", static_cast<unsigned>(millis()),
+                 format_hex_pretty(send_buf_, MsgLen).c_str());
         UARTDevice::write_array(send_buf_, MsgLen);
         last_write_millis_ = millis();
 
@@ -1009,7 +1028,8 @@ private:
 
         send_buf_[12] = calc_checksum(send_buf_);
 
-        ESP_LOGD(TAG, "sending %s", format_hex_pretty(send_buf_, MsgLen).c_str());
+        ESP_LOGD(TAG, "sending at %u ms: %s", static_cast<unsigned>(millis()),
+                 format_hex_pretty(send_buf_, MsgLen).c_str());
         UARTDevice::write_array(send_buf_, MsgLen);
         last_write_millis_ = millis();
 
@@ -1019,7 +1039,8 @@ private:
     }
 
     void process_message(const uint8_t* buffer) {
-        ESP_LOGD(TAG, "received %s", format_hex_pretty(buffer, MsgLen).c_str());
+        ESP_LOGD(TAG, "received at %u ms: %s", static_cast<unsigned>(millis()),
+                 format_hex_pretty(buffer, MsgLen).c_str());
 
         if (calc_checksum(buffer) != buffer[12]) {
             // When initializing, the unit sends an all-zeroes message as padding between
